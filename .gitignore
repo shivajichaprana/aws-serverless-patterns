@@ -1,0 +1,42 @@
+# ---- Terraform ----
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# ---- Lambda build artifacts ----
+**/build/
+**/dist/
+*.zip
+*.whl
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---- Editor / OS ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
