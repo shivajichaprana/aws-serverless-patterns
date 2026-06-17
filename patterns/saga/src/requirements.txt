@@ -1,0 +1,7 @@
+# Runtime dependencies for the saga Lambda functions.
+#
+# boto3 / botocore are provided by the AWS Lambda Python runtime and are NOT
+# bundled into the deployment package. They are pinned here only for local
+# development and unit testing.
+boto3>=1.34
+botocore>=1.34

@@ -1,0 +1,159 @@
+{
+  "Comment": "Order-fulfillment saga with compensating transactions. Forward path: CreateOrder -> ChargePayment -> ReserveInventory -> ScheduleShipment -> CompleteSaga. If any step fails, the steps that already succeeded are compensated in reverse order (ReleaseInventory -> RefundPayment -> CancelOrder) and the execution ends in a Fail state.",
+  "StartAt": "InitializeSaga",
+  "TimeoutSeconds": 900,
+  "States": {
+    "InitializeSaga": {
+      "Type": "Pass",
+      "Comment": "Seed an empty results object so each step can write to $.results.<step> without the path having to pre-exist.",
+      "Result": {},
+      "ResultPath": "$.results",
+      "Next": "CreateOrder"
+    },
+
+    "CreateOrder": {
+      "Type": "Task",
+      "Resource": "${create_order_arn}",
+      "Comment": "Forward step 1 of 4. Nothing precedes it, so a failure here needs no compensation.",
+      "ResultPath": "$.results.order",
+      "TimeoutSeconds": 30,
+      "Retry": [
+        { "ErrorEquals": ["SagaTransientError"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 },
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }
+      ],
+      "Next": "ChargePayment"
+    },
+
+    "ChargePayment": {
+      "Type": "Task",
+      "Resource": "${charge_payment_arn}",
+      "Comment": "Forward step 2 of 4. On failure, compensate CreateOrder.",
+      "ResultPath": "$.results.payment",
+      "TimeoutSeconds": 30,
+      "Retry": [
+        { "ErrorEquals": ["SagaTransientError"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 },
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CancelOrder" }
+      ],
+      "Next": "ReserveInventory"
+    },
+
+    "ReserveInventory": {
+      "Type": "Task",
+      "Resource": "${reserve_inventory_arn}",
+      "Comment": "Forward step 3 of 4. On failure, compensate ChargePayment then CreateOrder.",
+      "ResultPath": "$.results.reservation",
+      "TimeoutSeconds": 30,
+      "Retry": [
+        { "ErrorEquals": ["SagaTransientError"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 },
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "RefundPayment" }
+      ],
+      "Next": "ScheduleShipment"
+    },
+
+    "ScheduleShipment": {
+      "Type": "Task",
+      "Resource": "${schedule_shipment_arn}",
+      "Comment": "Forward step 4 of 4. On failure, compensate ReserveInventory then ChargePayment then CreateOrder.",
+      "ResultPath": "$.results.shipment",
+      "TimeoutSeconds": 30,
+      "Retry": [
+        { "ErrorEquals": ["SagaTransientError"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 },
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ReleaseInventory" }
+      ],
+      "Next": "CompleteSaga"
+    },
+
+    "CompleteSaga": {
+      "Type": "Task",
+      "Resource": "${complete_saga_arn}",
+      "Comment": "Terminal bookkeeping for the happy path: mark the saga COMPLETED.",
+      "ResultPath": "$.results.completion",
+      "TimeoutSeconds": 30,
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "End": true
+    },
+
+    "ReleaseInventory": {
+      "Type": "Task",
+      "Resource": "${release_inventory_arn}",
+      "Comment": "Compensation for ReserveInventory. Compensations retry aggressively because they must eventually succeed.",
+      "ResultPath": "$.compensation.release_inventory",
+      "TimeoutSeconds": 60,
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 3, "MaxAttempts": 5, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.compensation.error", "Next": "CompensationFailed" }
+      ],
+      "Next": "RefundPayment"
+    },
+
+    "RefundPayment": {
+      "Type": "Task",
+      "Resource": "${refund_payment_arn}",
+      "Comment": "Compensation for ChargePayment.",
+      "ResultPath": "$.compensation.refund_payment",
+      "TimeoutSeconds": 60,
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 3, "MaxAttempts": 5, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.compensation.error", "Next": "CompensationFailed" }
+      ],
+      "Next": "CancelOrder"
+    },
+
+    "CancelOrder": {
+      "Type": "Task",
+      "Resource": "${cancel_order_arn}",
+      "Comment": "Compensation for CreateOrder.",
+      "ResultPath": "$.compensation.cancel_order",
+      "TimeoutSeconds": 60,
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 3, "MaxAttempts": 5, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.compensation.error", "Next": "CompensationFailed" }
+      ],
+      "Next": "MarkFailed"
+    },
+
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "${mark_failed_arn}",
+      "Comment": "Record the saga as rolled back, then transition to the Fail state.",
+      "ResultPath": "$.results.mark_failed",
+      "TimeoutSeconds": 30,
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 2, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Next": "SagaFailed"
+    },
+
+    "SagaFailed": {
+      "Type": "Fail",
+      "Error": "SagaRolledBack",
+      "Cause": "The saga failed and all previously completed steps were compensated."
+    },
+
+    "CompensationFailed": {
+      "Type": "Fail",
+      "Error": "CompensationFailed",
+      "Cause": "A compensating transaction did not succeed after retries; manual intervention is required."
+    }
+  }
+}
