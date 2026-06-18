@@ -1,0 +1,2 @@
+# Handlers use only the standard library and the AWS-provided boto3 in the
+# Lambda runtime. Pin downstream clients here as the pattern is fleshed out.
