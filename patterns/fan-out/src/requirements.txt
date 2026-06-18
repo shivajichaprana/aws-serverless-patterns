@@ -1,0 +1,3 @@
+# Worker has no third-party runtime dependencies; it uses only the standard
+# library and the AWS-provided boto3 in the Lambda runtime. Pin extras here if
+# you add downstream clients.
