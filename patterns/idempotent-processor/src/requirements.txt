@@ -1,0 +1,4 @@
+# Provided at runtime by the AWS Lambda Powertools layer (see powertools_layer_*
+# variables), so it is NOT bundled into the function zip. Listed here for local
+# testing / type checking only.
+aws-lambda-powertools>=3.0.0
