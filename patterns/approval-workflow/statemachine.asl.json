@@ -1,0 +1,113 @@
+{
+  "Comment": "Human-in-the-loop approval gate using a Step Functions task token. PrepareRequest validates and persists the request; RequestApproval invokes the emailer with .waitForTaskToken so the execution pauses until the API Gateway callback resumes it. SendTaskSuccess -> RecordApproval -> Approved; SendTaskFailure(error=ApprovalRejected) -> HandleRejection -> Rejected; no decision before TimeoutSeconds -> ApprovalTimedOut.",
+  "StartAt": "PrepareRequest",
+  "TimeoutSeconds": 259200,
+  "States": {
+    "PrepareRequest": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke",
+      "Comment": "Validate the incoming request and persist it in PENDING state.",
+      "Parameters": {
+        "FunctionName": "${prepare_request_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "request.$": "$.Payload"
+      },
+      "ResultPath": "$.request",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "RequestInvalid" }
+      ],
+      "Next": "RequestApproval"
+    },
+
+    "RequestApproval": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke.waitForTaskToken",
+      "Comment": "Email the approver(s) Approve/Reject links carrying the task token, then pause. The API callback resumes us with SendTaskSuccess (approve) or SendTaskFailure error=ApprovalRejected (reject).",
+      "Parameters": {
+        "FunctionName": "${send_approval_email_arn}",
+        "Payload": {
+          "task_token.$": "$$.Task.Token",
+          "request.$": "$.request",
+          "execution.$": "$$.Execution.Id"
+        }
+      },
+      "TimeoutSeconds": 172800,
+      "ResultPath": "$.decision",
+      "Catch": [
+        { "ErrorEquals": ["ApprovalRejected"], "ResultPath": "$.decision", "Next": "HandleRejection" },
+        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "ApprovalTimedOut" },
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "ApprovalError" }
+      ],
+      "Next": "RecordApproval"
+    },
+
+    "RecordApproval": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke",
+      "Comment": "Approval received: record it and run the gated action.",
+      "Parameters": {
+        "FunctionName": "${on_approved_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.result",
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Next": "Approved"
+    },
+
+    "Approved": {
+      "Type": "Succeed"
+    },
+
+    "HandleRejection": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke",
+      "Comment": "Rejection received via SendTaskFailure: record it before failing the execution.",
+      "Parameters": {
+        "FunctionName": "${on_rejected_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.result",
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Next": "Rejected"
+    },
+
+    "Rejected": {
+      "Type": "Fail",
+      "Error": "ApprovalRejected",
+      "Cause": "The request was rejected by an approver."
+    },
+
+    "ApprovalTimedOut": {
+      "Type": "Fail",
+      "Error": "ApprovalTimedOut",
+      "Cause": "No approval decision was received before the task timeout."
+    },
+
+    "ApprovalError": {
+      "Type": "Fail",
+      "Error": "ApprovalError",
+      "Cause": "The approval workflow errored while requesting or processing the decision."
+    },
+
+    "RequestInvalid": {
+      "Type": "Fail",
+      "Error": "RequestInvalid",
+      "Cause": "The approval request failed validation."
+    }
+  }
+}
