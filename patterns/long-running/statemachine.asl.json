@@ -1,0 +1,122 @@
+{
+  "Comment": "Long-running asynchronous job orchestration. SubmitJob starts an external job, then the execution loops over a Wait state and a poll Task with exponential backoff so it consumes no compute while the job runs (executions may span minutes to days). On success the workflow pauses on a task-token Task (.waitForTaskToken) for human-in-the-loop sign-off, resuming only when SendTaskSuccess is called with the token. Polls exhaust the budget -> JobPollBudgetExhausted; no sign-off before the timeout -> SignoffTimedOut.",
+  "StartAt": "SubmitJob",
+  "TimeoutSeconds": 604800,
+  "States": {
+    "SubmitJob": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke",
+      "Comment": "Start the async job and persist its initial state. The result replaces the execution input so every later state reads from $.job.",
+      "Parameters": {
+        "FunctionName": "${submit_job_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "job.$": "$.Payload"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "JobFailed" }
+      ],
+      "Next": "WaitForJob"
+    },
+
+    "WaitForJob": {
+      "Type": "Wait",
+      "Comment": "Idle wait between polls. SecondsPath lets the poller tune the next interval (exponential backoff up to a cap), so the execution holds no compute while the job runs.",
+      "SecondsPath": "$.job.next_poll_seconds",
+      "Next": "PollJob"
+    },
+
+    "PollJob": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke",
+      "Comment": "Check the job's status and recompute the next backed-off wait interval.",
+      "Parameters": {
+        "FunctionName": "${poll_job_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "job.$": "$.Payload"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 4, "BackoffRate": 2.0 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "JobFailed" }
+      ],
+      "Next": "EvaluateJob"
+    },
+
+    "EvaluateJob": {
+      "Type": "Choice",
+      "Comment": "Branch on the polled status: succeed -> sign-off gate, fail -> Fail, poll budget exhausted -> Fail, otherwise wait and poll again.",
+      "Choices": [
+        { "Variable": "$.job.status", "StringEquals": "SUCCEEDED", "Next": "RequestSignoff" },
+        { "Variable": "$.job.status", "StringEquals": "FAILED", "Next": "JobFailed" },
+        { "Variable": "$.job.exhausted", "BooleanEquals": true, "Next": "JobTimedOut" }
+      ],
+      "Default": "WaitForJob"
+    },
+
+    "RequestSignoff": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke.waitForTaskToken",
+      "Comment": "Human-in-the-loop gate. The Lambda is handed the task token and records it (and would notify an operator) so the job can be approved out-of-band. The execution pauses here until SendTaskSuccess (or SendTaskFailure) is called with the token.",
+      "Parameters": {
+        "FunctionName": "${request_signoff_arn}",
+        "Payload": {
+          "task_token.$": "$$.Task.Token",
+          "job.$": "$.job"
+        }
+      },
+      "TimeoutSeconds": 86400,
+      "ResultPath": "$.signoff",
+      "Catch": [
+        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "SignoffTimedOut" },
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "JobFailed" }
+      ],
+      "Next": "Finalize"
+    },
+
+    "Finalize": {
+      "Type": "Task",
+      "Resource": "arn:${partition}:states:::lambda:invoke",
+      "Comment": "Terminal happy-path bookkeeping: mark the job COMPLETED.",
+      "Parameters": {
+        "FunctionName": "${finalize_arn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.result",
+      "Retry": [
+        { "ErrorEquals": ["States.ALL"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "End": true
+    },
+
+    "JobFailed": {
+      "Type": "Fail",
+      "Error": "JobFailed",
+      "Cause": "The long-running job failed during submission, polling, or processing."
+    },
+
+    "JobTimedOut": {
+      "Type": "Fail",
+      "Error": "JobPollBudgetExhausted",
+      "Cause": "The job did not reach a terminal status within the configured poll budget."
+    },
+
+    "SignoffTimedOut": {
+      "Type": "Fail",
+      "Error": "SignoffTimedOut",
+      "Cause": "No sign-off callback (task token) was received before the timeout."
+    }
+  }
+}
