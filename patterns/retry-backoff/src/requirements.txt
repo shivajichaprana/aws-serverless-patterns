@@ -1,0 +1,3 @@
+# The processor uses only the standard library and the AWS-provided boto3 in the
+# Lambda runtime, so nothing is bundled into the function zip. Pin downstream
+# clients here if process_record gains real dependencies.
