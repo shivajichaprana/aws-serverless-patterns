@@ -1,0 +1,7 @@
+# Test-only dependencies for the pattern Lambda handler suite.
+boto3>=1.34
+moto[all]>=5.0
+pytest>=8.0
+# Required to import the idempotent-processor handler; its tests skip gracefully
+# if Powertools is unavailable.
+aws-lambda-powertools>=3.0
