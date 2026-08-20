@@ -71,7 +71,7 @@ resource "aws_sfn_state_machine" "batch" {
               Type = "Pass"
               Parameters = {
                 "shard_id.$" = "$.shard_id"
-                status = "FAILED"
+                status       = "FAILED"
                 "error.$"    = "$.error"
               }
               End = true

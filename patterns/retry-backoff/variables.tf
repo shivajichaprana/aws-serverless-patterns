@@ -22,8 +22,8 @@ variable "backoff_base_seconds" {
     (full jitter). Keep it small relative to backoff_max_seconds so early retries
     are quick and later ones spread out.
   EOT
-  type    = number
-  default = 5
+  type        = number
+  default     = 5
 
   validation {
     condition     = var.backoff_base_seconds >= 1 && var.backoff_base_seconds <= 900

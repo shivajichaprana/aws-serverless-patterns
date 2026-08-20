@@ -23,8 +23,8 @@ variable "signature_header" {
     Lambda against the shared secret. Must be lowercase here because API Gateway
     normalises header names to lowercase in mapping templates.
   EOT
-  type    = string
-  default = "x-signature-256"
+  type        = string
+  default     = "x-signature-256"
 
   validation {
     condition     = can(regex("^[a-z0-9-]+$", var.signature_header))
@@ -55,8 +55,8 @@ variable "webhook_secret_arn" {
     null, the module creates a secret (populated out-of-band) and grants the
     consumer read access to it. Provide an ARN to reuse a centrally-managed key.
   EOT
-  type    = string
-  default = null
+  type        = string
+  default     = null
 }
 
 variable "max_body_bytes" {

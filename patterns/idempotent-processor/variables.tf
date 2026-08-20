@@ -21,8 +21,8 @@ variable "idempotency_ttl_seconds" {
     TTL expires it. After expiry the same idempotency key is treated as new. Set
     longer than the maximum window over which a producer might retry a request.
   EOT
-  type    = number
-  default = 3600
+  type        = number
+  default     = 3600
 
   validation {
     condition     = var.idempotency_ttl_seconds >= 60 && var.idempotency_ttl_seconds <= 2592000

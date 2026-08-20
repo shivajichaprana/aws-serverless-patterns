@@ -128,8 +128,8 @@ resource "aws_api_gateway_method" "post" {
   api_key_required = false
 
   request_parameters = {
-    "method.request.path.source"                          = true
-    "method.request.header.${var.signature_header}"       = true
+    "method.request.path.source"                    = true
+    "method.request.header.${var.signature_header}" = true
   }
 
   request_validator_id = aws_api_gateway_request_validator.body.id
