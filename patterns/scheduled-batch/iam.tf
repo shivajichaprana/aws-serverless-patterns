@@ -21,9 +21,9 @@ resource "aws_iam_role" "lambda_exec" {
 
 data "aws_iam_policy_document" "lambda_logs" {
   statement {
-    sid     = "Logs"
-    effect  = "Allow"
-    actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    sid       = "Logs"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = [for lg in aws_cloudwatch_log_group.batch : "${lg.arn}:*"]
   }
 }

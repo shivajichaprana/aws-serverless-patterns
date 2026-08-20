@@ -19,8 +19,8 @@ resource "aws_sfn_state_machine" "batch" {
     StartAt = "Split"
     States = {
       Split = {
-        Type       = "Task"
-        Resource   = "arn:${local.partition}:states:::lambda:invoke"
+        Type     = "Task"
+        Resource = "arn:${local.partition}:states:::lambda:invoke"
         Parameters = {
           FunctionName = aws_lambda_function.batch["split"].arn
           "Payload.$"  = "$"
@@ -45,8 +45,8 @@ resource "aws_sfn_state_machine" "batch" {
           StartAt = "ProcessShard"
           States = {
             ProcessShard = {
-              Type       = "Task"
-              Resource   = "arn:${local.partition}:states:::lambda:invoke"
+              Type     = "Task"
+              Resource = "arn:${local.partition}:states:::lambda:invoke"
               Parameters = {
                 FunctionName = aws_lambda_function.batch["process"].arn
                 "Payload.$"  = "$"
@@ -71,7 +71,7 @@ resource "aws_sfn_state_machine" "batch" {
               Type = "Pass"
               Parameters = {
                 "shard_id.$" = "$.shard_id"
-                status       = "FAILED"
+                status = "FAILED"
                 "error.$"    = "$.error"
               }
               End = true
@@ -82,8 +82,8 @@ resource "aws_sfn_state_machine" "batch" {
       }
 
       Reduce = {
-        Type       = "Task"
-        Resource   = "arn:${local.partition}:states:::lambda:invoke"
+        Type     = "Task"
+        Resource = "arn:${local.partition}:states:::lambda:invoke"
         Parameters = {
           FunctionName = aws_lambda_function.batch["reduce"].arn
           "Payload.$"  = "$"

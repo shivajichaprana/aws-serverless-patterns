@@ -138,8 +138,8 @@ data "aws_iam_policy_document" "sfn_exec" {
   # Invoke only the four functions the state machine drives. decision_handler is
   # invoked by API Gateway, not Step Functions, so it is deliberately excluded.
   statement {
-    sid    = "InvokeWorkflowFunctions"
-    effect = "Allow"
+    sid     = "InvokeWorkflowFunctions"
+    effect  = "Allow"
     actions = ["lambda:InvokeFunction"]
     resources = [
       aws_lambda_function.approval["prepare_request"].arn,

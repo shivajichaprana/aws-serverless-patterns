@@ -129,9 +129,9 @@ resource "aws_lambda_function" "processor" {
 
   environment {
     variables = {
-      IDEMPOTENCY_TABLE      = aws_dynamodb_table.idempotency.name
-      LOG_LEVEL              = var.log_level
-      POWERTOOLS_LOG_LEVEL   = var.log_level
+      IDEMPOTENCY_TABLE       = aws_dynamodb_table.idempotency.name
+      LOG_LEVEL               = var.log_level
+      POWERTOOLS_LOG_LEVEL    = var.log_level
       POWERTOOLS_SERVICE_NAME = var.name_prefix
     }
   }
